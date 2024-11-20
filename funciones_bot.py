@@ -1,9 +1,13 @@
 import bs4 as bs
 import requests
 import data_config as config
+import random
+import string
+import time
 
 
 class NieBot:
+
     def __init__(self):
         #base url
         self.base_url = config.base_url
@@ -85,26 +89,54 @@ class NieBot:
             return True
     
     def create_session(self):
-        """Initialize session and get necessary cookies"""
+        """Initialize session with randomized delays"""
         try:
             self.session = requests.Session()
-            # Get initial cookies
-            response = self.session.get(self.base_url, headers=self.headers)
-            if response.status_code == 200:
-                return True
             
+            # Add random delay between 1-3 seconds
+            time.sleep(random.uniform(1, 3))
+            
+            # Randomize user agent and update headers
+            self.headers['User-Agent'] = random.choice([
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:89.0) Gecko/20100101 Firefox/89.0',
+                'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.1 Safari/605.1.15',
+                'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Edge/91.0.864.59',
+                'Mozilla/5.0 (iPhone; CPU iPhone OS 14_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.1 Mobile/15E148 Safari/604.1'
+            ])
+            
+            response = self.session.get(self.base_url, headers=self.headers)
+            return response.status_code == 200
+                
         except Exception as e:
             print(f"Error creating session: {e}")
             return False
 
+    def check_session_expired(self, response_text):
+        """Check if session has expired"""
+        soup = bs.BeautifulSoup(response_text, 'html.parser')
+        error_div = soup.find('div', class_='mf-msg__error')
+        if error_div and "sesión ha caducado" in error_div.text:
+            print("Session expired")
+            return True
+        return False
+
+    def handle_expired_session(self):
+        """Reset session and cookies when session expires"""
+        print("Session expired, creating new session...")
+        self.session = None
+        successful_session = self.create_session()
+        return successful_session
+    
     def select_province(self, provincia: str):
         """Select a province and get the URL to access the service"""
         try:
             # Ensure we have an active session
-            if not self.session: #if no session, create one
-                successful_session = self.create_session()
-                if not successful_session: #if session creation failed, raise an exception
-                    raise Exception("Failed to create session")
+            if not self.session:
+                if not self.create_session():
+                    return None
 
             #get province ID from dictionary
             if provincia in self.dct_provincias.keys():
@@ -118,14 +150,13 @@ class NieBot:
 
             if response.status_code == 200:
                 print(f"Success: {response.url}")   
-                return
+                return response
             else:
-                print(f"Error al obtener datos de la URL: {response.status_code}")
-                return 
+                raise Exception(f"Error al obtener datos de la URL: {response.status_code}")
 
         except Exception as e:
-            print(f"Error al obtener datos de la URL: {e}")
-            return
+            print(e)
+            return None
 
     def submit_tramite_form(self, oficina):
         """Submit the tipo de tramite form after selecting province"""
@@ -170,11 +201,10 @@ class NieBot:
                 print(f"Success: {response.url}")
                 return response
             else:
-                print(f"Error submitting form: {response.status_code}")
-                return None
+                raise Exception(f"Error submitting form: {response.status_code}")
 
         except Exception as e:
-            print(f"Error in submit_form: {e}")
+            print(e)
             return None
 
     def seleccionar_tipo_presentacion(self):
@@ -219,16 +249,15 @@ class NieBot:
                 print(f"Success: {response.url}")
                 return response
             else:
-                print(f"Error selecting tipo presentacion: {response.status_code}")
-                return None
+                raise Exception(f"Error selecting tipo presentacion: {response.status_code}")
 
         except Exception as e:
-            print(f"Error in seleccionar_tipo_presentacion: {e}")
+            print(e)
             return None
 
     def validar_entrada_datos_usuario(self):
         """Validar entrada de datos del usuario"""
-        try: 
+        try:
             if not self.session:
                 if not self.create_session():
                     return None
@@ -238,9 +267,8 @@ class NieBot:
 
             #check if document ID is valid
             valid_id = self.check_id_validity(self.doc_id[0], self.doc_type[0])
-            if not valid_id: #if valid ID is False, raise an exception
+            if not valid_id:
                 raise Exception("Invalid document ID")
-            
 
             # Payload data
             payload = {
@@ -256,7 +284,7 @@ class NieBot:
             post_headers.update({
                 'Content-Type': 'application/x-www-form-urlencoded',
                 'Origin': 'https://icp.administracionelectronica.gob.es',
-                'Referer': f'{self.base_url}/icpplustiem/acEntrada',  # Previous page URL
+                'Referer': f'{self.base_url}/icpplustiem/acEntrada',
                 'Sec-Fetch-Dest': 'document',
                 'Sec-Fetch-Mode': 'navigate',
                 'Sec-Fetch-Site': 'same-origin',
@@ -274,25 +302,81 @@ class NieBot:
 
             if response.status_code == 200:
                 print(f"Success: {response.url}")
-                return response 
+                print("Response content:", response.text)
+                soup = bs.BeautifulSoup(response.text, 'html.parser')
+                solicitar_cita_button = soup.find('input', {'value': 'Solicitar cita'})
+
+                if solicitar_cita_button:
+                    print(f"Successfully found button")
+                    return response
+                else:
+                    raise Exception("Solicitar cita button not found")
             else:
-                print(f"Error validating entrada: {response.status_code}")
-                return None
+                raise Exception(f"Error validating entrada: {response.status_code}")
 
         except Exception as e:
-            print(f"Error in validar_entrada: {e}")
+            print(e)
             return None
 
 def main(provincia: str, municipalidad: str):
     bot = NieBot()
-    bot.select_province(provincia)
-    oficina = bot.check_oficinas(provincia, municipalidad)
-    bot.submit_tramite_form(oficina)
-    bot.seleccionar_tipo_presentacion()
+    max_retries = 3
+    current_try = 0
+    
+    while current_try < max_retries:
+        try:
+            # Select Province
+            response = bot.select_province(provincia)
+            if not response:
+                raise Exception("Failed to select province")
+            expired_session = bot.check_session_expired(response.text)
+            if expired_session:
+                bot.handle_expired_session()
+                continue
 
+            # Check Oficinas
+            oficina = bot.check_oficinas(provincia, municipalidad)
+            if not oficina:
+                raise Exception("Failed to get oficina")
+
+            # Submit Tramite Form
+            response = bot.submit_tramite_form(oficina)
+            if not response:
+                raise Exception("Failed to submit tramite form")
+            if bot.check_session_expired(response.text): #evaluates to True or False
+                bot.handle_expired_session()
+                continue
+
+            # Select Tipo Presentacion
+            response = bot.seleccionar_tipo_presentacion()
+            if not response:
+                raise Exception("Failed to select tipo presentacion")
+            if bot.check_session_expired(response.text):
+                bot.handle_expired_session()
+                continue
+
+            # Validate User Data
+            response = bot.validar_entrada_datos_usuario()
+            if not response:
+                raise Exception("Failed to validate user data")
+            if bot.check_session_expired(response.text):
+                bot.handle_expired_session()
+                continue
+
+            # If we get here, everything succeeded
+            print("Process completed successfully!")
+            return True
+
+        except Exception as e:
+            print(f"Error in attempt {current_try + 1}: {e}")
+            current_try += 1
+            bot.handle_expired_session()  # Create new session after any error
+    
+    print("Maximum retries reached. Please try again later.")
+    return False
 
 if __name__ == "__main__":
-    main()
+    main("Madrid", "any")
 
     
 
