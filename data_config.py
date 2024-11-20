@@ -86,6 +86,7 @@ dct_oficinas_madrid = offices = {
 }
 
 #user data
-nombre = []
-documento_id = []
+doc_type = ["PASAPORTE"]
+nombre = ["JUAN PABLO CORREA"]
+documento_id = ["YB1234567"]
 ubicacion_usuario = [] #tentativo, tu incorporate later based on user preferences
