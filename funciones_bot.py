@@ -66,6 +66,24 @@ class NieBot:
             print(f"Error in extracting codes associated to offices: {e}")
             return None
     
+    @staticmethod
+    def check_id_validity(doc_id: str, doc_type: str) -> bool:
+        """Check if the document ID is valid"""
+
+        if doc_type == "N.I.E.":
+            #length 9, first letter is a letter,  last letter is a letter, the rest are digits
+            if len(doc_id) == 9 and doc_id[0].isalpha() and doc_id[1:-1].isdigit() and doc_id[-1].isalpha():
+                return True
+            else:
+                return False
+        elif doc_type == "D.N.I.":
+            if len(doc_id) == 9 and doc_id[:-1].isdigit() and doc_id[-1].isalpha():
+                return True
+            else:
+                return False
+        else: #for pasaporte no need to check anything
+            return True
+    
     def create_session(self):
         """Initialize session and get necessary cookies"""
         try:
@@ -208,7 +226,7 @@ class NieBot:
             print(f"Error in seleccionar_tipo_presentacion: {e}")
             return None
 
-    def validar_entrada(self, doc_type: str, documento_id: str, nombre: str):
+    def validar_entrada_datos_usuario(self):
         """Validar entrada de datos del usuario"""
         try: 
             if not self.session:
@@ -217,6 +235,12 @@ class NieBot:
 
             # Endpoint URL
             endpoint = f"{self.base_url}/icpplustiem/acValidarEntrada"
+
+            #check if document ID is valid
+            valid_id = self.check_id_validity(self.doc_id[0], self.doc_type[0])
+            if not valid_id: #if valid ID is False, raise an exception
+                raise Exception("Invalid document ID")
+            
 
             # Payload data
             payload = {
@@ -250,7 +274,7 @@ class NieBot:
 
             if response.status_code == 200:
                 print(f"Success: {response.url}")
-                return response
+                return response 
             else:
                 print(f"Error validating entrada: {response.status_code}")
                 return None
