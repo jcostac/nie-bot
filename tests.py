@@ -4,4 +4,5 @@ import pretty_errors
 if __name__ == "__main__":
     bot = fb.NieBot()
     bot.select_province("Madrid")
+    bot.submit_tramite_form()
 
