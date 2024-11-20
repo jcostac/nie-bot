@@ -31,7 +31,7 @@ class NieBot:
             print(f"Error creating session: {e}")
             return False
 
-    def select_province(self, provincia):
+    def select_province(self, provincia: str):
         """Select a province and get the URL to access the service"""
         try:
             # Ensure we have an active session
@@ -52,22 +52,51 @@ class NieBot:
 
             if response.status_code == 200:
                 print(f"Success: {response.url}")   
-                return response.url
+                return
             else:
                 print(f"Error al obtener datos de la URL: {response.status_code}")
-                return None
+                return 
 
         except Exception as e:
             print(f"Error al obtener datos de la URL: {e}")
-            return None
+            return
     
-    def check_oficinas(self, provincia):
+    @staticmethod
+    def check_oficinas(provincia: str, municipalidad, any = False) -> dict:
         """Return a dictionary with the available offices for a given province"""
-        if provincia == "Madrid":
-            dct_oficinas = config.dct_oficinas_madrid
-            return dct_oficinas
-        else:
-            print(f"No available offices for {provincia}")
+
+        try:    
+            if any == True:
+                return str(99)  #return "Cualquier oficina"
+        
+            if provincia == "Madrid":
+                dct_oficinas = config.dct_oficinas_madrid
+                office_keys = list(dct_oficinas.keys()) #get keys from dictionary
+            else:
+                print(f"No available offices for {provincia}")
+                return None
+
+            if municipalidad:
+                    # Find all office keys containing the municipality name (case insensitive)
+                    matching_office_keys = [
+                        office
+                        for office in office_keys 
+                        if municipalidad.lower() in office.lower()
+                    ] #append to list if municipality name is in office key
+                    
+                    # Return filtered dictionary with matching offices
+                    if matching_office_keys:
+                        filtered_offices = {
+                            key: dct_oficinas[key] 
+                            for key in matching_office_keys
+                        } 
+                    
+                    #return mathcing offices values as a list as strings
+                    return list(str(filtered_offices.values()))
+               
+        
+        except Exception as e:
+            print(f"Error in check_oficinas: {e}")
             return None
 
     def submit_tramite_form(self, oficina):
@@ -118,6 +147,55 @@ class NieBot:
 
         except Exception as e:
             print(f"Error in submit_form: {e}")
+            return None
+
+    def seleccionar_tipo_presentacion(self):
+        """Select the type of presentation (sin Cl@ve)"""
+        try:
+            if not self.session:
+                if not self.create_session():
+                    return None
+
+            # Endpoint URL
+            endpoint = f"{self.base_url}/icpplustiem/acEntrada"
+
+            # Form data
+            payload = {
+                'cadd9228-55db-4f0e-a246-243388f877bc': '',
+                '6ae34d68-b97d-4558-ac35-af1d352d19d7': 'b8872b92-bbcd-482a-978e-9d3977f0bc37',
+                'acceso': 'N'  # N presumably means "sin Cl@ve"
+            }
+
+            # Additional headers for this specific request
+            post_headers = self.headers.copy()
+            post_headers.update({
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'Origin': 'https://icp.administracionelectronica.gob.es',
+                'Referer': f'{self.base_url}/icpplustiem/acInfo',  # Previous page URL
+                'Sec-Fetch-Dest': 'document',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'same-origin',
+                'Sec-Fetch-User': '?1',
+                'Upgrade-Insecure-Requests': '1'
+            })
+
+            # Make the POST request
+            response = self.session.post(
+                endpoint,
+                data=payload,
+                headers=post_headers,
+                allow_redirects=True
+            )
+
+            if response.status_code == 200:
+                print(f"Success: {response.url}")
+                return response
+            else:
+                print(f"Error selecting tipo presentacion: {response.status_code}")
+                return None
+
+        except Exception as e:
+            print(f"Error in seleccionar_tipo_presentacion: {e}")
             return None
 
 def main():
