@@ -4,6 +4,7 @@ import data_config as config
 import random
 import string
 import time
+import cloudscraper
 
 
 class NieBot:
@@ -256,64 +257,27 @@ class NieBot:
             return None
 
     def validar_entrada_datos_usuario(self):
-        """Validar entrada de datos del usuario"""
+        """Validar entrada de datos del usuario using cloudscraper"""
         try:
-            if not self.session:
-                if not self.create_session():
-                    return None
-
-            # Endpoint URL
-            endpoint = f"{self.base_url}/icpplustiem/acValidarEntrada"
-
-            #check if document ID is valid
-            valid_id = self.check_id_validity(self.doc_id[0], self.doc_type[0])
-            if not valid_id:
-                raise Exception("Invalid document ID")
-
-            # Payload data
+            scraper = cloudscraper.create_scraper()
+            
             payload = {
-                'cfcbe634-ce1e-41d3-827b-82f23bc96a73': '65732fb4-5d2d-4e86-97f2-4417509eff95',
-                'de8f94fc-551d-4835-bf33-0241152d1c2e': '',
-                'rdbTipoDoc': self.doc_type[0],  # Can be 'N.I.E.', 'D.N.I.' or 'Pasaporte'
-                'txtIdCitado': self.doc_id[0],  # The document number
-                'txtDesCitado': self.nombre[0].upper()  # Name in uppercase
+                'rdbTipoDoc': self.doc_type[0],
+                'txtIdCitado': self.doc_id[0],
+                'txtDesCitado': self.nombre[0].upper()
             }
-
-            # Additional headers for this specific request
-            post_headers = self.headers.copy()
-            post_headers.update({
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'Origin': 'https://icp.administracionelectronica.gob.es',
-                'Referer': f'{self.base_url}/icpplustiem/acEntrada',
-                'Sec-Fetch-Dest': 'document',
-                'Sec-Fetch-Mode': 'navigate',
-                'Sec-Fetch-Site': 'same-origin',
-                'Sec-Fetch-User': '?1',
-                'Upgrade-Insecure-Requests': '1'
-            })
-
-            # Make the POST request
-            response = self.session.post(
-                endpoint,
-                data=payload,
-                headers=post_headers,
-                allow_redirects=True
+            
+            response = scraper.post(
+                f"{self.base_url}/icpplustiem/acValidarEntrada",
+                data=payload
             )
-
+            
             if response.status_code == 200:
                 print(f"Success: {response.url}")
-                print("Response content:", response.text)
-                soup = bs.BeautifulSoup(response.text, 'html.parser')
-                solicitar_cita_button = soup.find('input', {'value': 'Solicitar cita'})
-
-                if solicitar_cita_button:
-                    print(f"Successfully found button")
-                    return response
-                else:
-                    raise Exception("Solicitar cita button not found")
+                return response
             else:
-                raise Exception(f"Error validating entrada: {response.status_code}")
-
+                raise Exception(f"Error validating user data: {response.status_code}")
+            
         except Exception as e:
             print(e)
             return None
@@ -325,29 +289,42 @@ def main(provincia: str, municipalidad: str):
     
     while current_try < max_retries:
         try:
+            # Add random delay between attempts
+            if current_try > 0:
+                delay = random.uniform(5, 10)  # 5-10 seconds between retries
+                print(f"Waiting {delay:.2f} seconds before retry...")
+                time.sleep(delay)
+
             # Select Province
+            print("Selecting province...")
+            time.sleep(random.uniform(1, 3))  # Random delay between steps
             response = bot.select_province(provincia)
             if not response:
                 raise Exception("Failed to select province")
-            expired_session = bot.check_session_expired(response.text)
-            if expired_session:
+            if bot.check_session_expired(response.text):
                 bot.handle_expired_session()
                 continue
 
             # Check Oficinas
+            print("Checking oficinas...")
+            time.sleep(random.uniform(2, 4))
             oficina = bot.check_oficinas(provincia, municipalidad)
             if not oficina:
                 raise Exception("Failed to get oficina")
 
             # Submit Tramite Form
+            print("Submitting tramite form...")
+            time.sleep(random.uniform(1.5, 3.5))
             response = bot.submit_tramite_form(oficina)
             if not response:
                 raise Exception("Failed to submit tramite form")
-            if bot.check_session_expired(response.text): #evaluates to True or False
+            if bot.check_session_expired(response.text):
                 bot.handle_expired_session()
                 continue
 
             # Select Tipo Presentacion
+            print("Selecting tipo presentacion...")
+            time.sleep(random.uniform(2, 4))
             response = bot.seleccionar_tipo_presentacion()
             if not response:
                 raise Exception("Failed to select tipo presentacion")
@@ -356,6 +333,8 @@ def main(provincia: str, municipalidad: str):
                 continue
 
             # Validate User Data
+            print("Validating user data...")
+            time.sleep(random.uniform(2, 5))
             response = bot.validar_entrada_datos_usuario()
             if not response:
                 raise Exception("Failed to validate user data")
@@ -370,6 +349,13 @@ def main(provincia: str, municipalidad: str):
         except Exception as e:
             print(f"Error in attempt {current_try + 1}: {e}")
             current_try += 1
+            
+            # Exponential backoff for retries
+            if current_try < max_retries:
+                wait_time = (2 ** current_try) + random.uniform(1, 5)
+                print(f"Waiting {wait_time:.2f} seconds before next attempt...")
+                time.sleep(wait_time)
+            
             bot.handle_expired_session()  # Create new session after any error
     
     print("Maximum retries reached. Please try again later.")
