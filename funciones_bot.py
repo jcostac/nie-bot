@@ -118,10 +118,19 @@ class NieBot:
     def check_session_expired(self, response_text):
         """Check if session has expired"""
         soup = bs.BeautifulSoup(response_text, 'html.parser')
+
+        #find error div
         error_div = soup.find('div', class_='mf-msg__error')
+        #find info div
+        info_div = soup.find('div', id= "mensajeinfo")
+
         if error_div and "sesión ha caducado" in error_div.text:
             print("Session expired")
             return True
+        elif info_div and "sesión ha caducado" in info_div.text:
+            print("Session expired")
+            return True
+        
         return False
 
     def handle_expired_session(self):
@@ -257,27 +266,62 @@ class NieBot:
             return None
 
     def validar_entrada_datos_usuario(self):
-        """Validar entrada de datos del usuario using cloudscraper"""
+        """Validar entrada de datos del usuario"""
         try:
-            scraper = cloudscraper.create_scraper()
-            
+            if not self.session:
+                if not self.create_session():
+                    return None
+
+            # Endpoint URL
+            endpoint = f"{self.base_url}/icpplustiem/acValidarEntrada"
+
+            #check if document ID is valid
+            valid_id = self.check_id_validity(self.doc_id[0], self.doc_type[0])
+            if not valid_id:
+                raise Exception("Invalid document ID")
+
+            # Form data
             payload = {
                 'rdbTipoDoc': self.doc_type[0],
                 'txtIdCitado': self.doc_id[0],
                 'txtDesCitado': self.nombre[0].upper()
             }
-            
-            response = scraper.post(
-                f"{self.base_url}/icpplustiem/acValidarEntrada",
-                data=payload
+
+            # Additional headers for this specific request
+            post_headers = self.headers.copy()
+            post_headers.update({
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'Origin': 'https://icp.administracionelectronica.gob.es',
+                'Referer': f'{self.base_url}/icpplustiem/acEntrada',
+                'Sec-Fetch-Dest': 'document',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'same-origin',
+                'Sec-Fetch-User': '?1',
+                'Upgrade-Insecure-Requests': '1'
+            })
+
+            # Make the POST request using the same session
+            response = self.session.post(
+                endpoint,
+                data=payload,
+                headers=post_headers,
+                allow_redirects=True
             )
-            
+
             if response.status_code == 200:
                 print(f"Success: {response.url}")
-                return response
+                print("Response content:", response.text)
+                soup = bs.BeautifulSoup(response.text, 'html.parser')
+                solicitar_cita_button = soup.find('input', {'value': 'Solicitar cita'})
+
+                if solicitar_cita_button:
+                    print(f"Successfully found button")
+                    return response
+                else:
+                    raise Exception("Solicitar cita button not found")
             else:
-                raise Exception(f"Error validating user data: {response.status_code}")
-            
+                raise Exception(f"Error validating entrada: {response.status_code}")
+
         except Exception as e:
             print(e)
             return None
@@ -324,7 +368,7 @@ def main(provincia: str, municipalidad: str):
 
             # Select Tipo Presentacion
             print("Selecting tipo presentacion...")
-            time.sleep(random.uniform(2, 4))
+            time.sleep(random.uniform(1, 3))
             response = bot.seleccionar_tipo_presentacion()
             if not response:
                 raise Exception("Failed to select tipo presentacion")
